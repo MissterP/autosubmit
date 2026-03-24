@@ -349,3 +349,29 @@ def test_platforms_not_dict(
         )
     else:
         assert platform_description == as_conf.platforms_data
+
+def test_get_cpmip_thresholds_with_data(autosubmit_config):
+    as_conf = autosubmit_config(expid='a000', experiment_data={
+        'JOBS': {
+            'SIM': {
+                'CPMIP_THRESHOLDS': {
+                    'SYPD': {
+                        'THRESHOLD': 5.0,
+                        'COMPARISON': 'greater_than'
+                    }
+                }
+            }
+        }
+    })
+    thresholds = as_conf.get_cpmip_thresholds('SIM')
+    assert thresholds['SYPD']['THRESHOLD'] == 5.0
+    assert thresholds['SYPD']['COMPARISON'] == 'greater_than'
+
+def test_get_cpmip_thresholds_with_no_data(autosubmit_config):
+    as_conf = autosubmit_config(expid='a000', experiment_data={
+        'JOBS': {
+            'SIM': {}
+        }
+    })
+    thresholds = as_conf.get_cpmip_thresholds('SIM')
+    assert thresholds == {}
