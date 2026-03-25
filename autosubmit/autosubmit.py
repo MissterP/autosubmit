@@ -76,6 +76,7 @@ from autosubmit.job.job_utils import SubJob, SubJobManager
 from autosubmit.log.log import Log, AutosubmitError, AutosubmitCritical
 from autosubmit.notifications.mail_notifier import MailNotifier
 from autosubmit.notifications.notifier import Notifier
+from autosubmit.metrics.cpmip_metrics import CPMIPMetrics
 from autosubmit.platforms.paramiko_platform import ParamikoPlatform
 from autosubmit.platforms.paramiko_submitter import ParamikoSubmitter
 from autosubmit.platforms.platform import Platform
