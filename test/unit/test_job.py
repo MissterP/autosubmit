@@ -1178,6 +1178,50 @@ def test_job_loads_empty_cpmip_thresholds_when_missing(autosubmit_config):
     assert job.cpmip_thresholds == {}
 
 
+def test_job_loads_chunk_metadata_from_experiment_defaults(autosubmit_config):
+    experiment_data = {
+        "EXPERIMENT": {
+            "CHUNKSIZE": 3,
+            "CHUNKSIZEUNIT": "MONTH",
+        },
+        "JOBS": {
+            "RANDOM-SECTION": {
+                "FILE": "test.sh",
+                "PLATFORM": "DUMMY_PLATFORM",
+            },
+        },
+    }
+
+    job, _, _ = create_job_and_update_parameters(autosubmit_config, experiment_data)
+
+    assert hasattr(job, "chunk_size")
+    assert hasattr(job, "chunk_size_unit")
+    assert job.chunk_size == 3
+    assert job.chunk_size_unit == "month"
+
+
+def test_job_loads_chunk_metadata_with_job_overrides(autosubmit_config):
+    experiment_data = {
+        "EXPERIMENT": {
+            "CHUNKSIZE": 1,
+            "CHUNKSIZEUNIT": "day",
+        },
+        "JOBS": {
+            "RANDOM-SECTION": {
+                "FILE": "test.sh",
+                "PLATFORM": "DUMMY_PLATFORM",
+                "CHUNKSIZE": 12,
+                "CHUNKSIZEUNIT": "HOUR",
+            },
+        },
+    }
+
+    job, _, _ = create_job_and_update_parameters(autosubmit_config, experiment_data)
+
+    assert job.chunk_size == 12
+    assert job.chunk_size_unit == "hour"
+
+
 @pytest.mark.parametrize('custom_directives, test_type, result_by_lines', [
     ("test_str a", "platform", ["test_str a"]),
     (['test_list', 'test_list2'], "platform", ['test_list', 'test_list2']),
