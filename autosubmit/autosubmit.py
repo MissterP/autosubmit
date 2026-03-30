@@ -76,6 +76,7 @@ from autosubmit.job.job_utils import SubJob, SubJobManager
 from autosubmit.log.log import Log, AutosubmitError, AutosubmitCritical
 from autosubmit.notifications.mail_notifier import MailNotifier
 from autosubmit.notifications.notifier import Notifier
+from autosubmit.notifications.cpmip_threshold_notification_manager import CPMIPThresholdNotificationManager
 from autosubmit.platforms.paramiko_platform import ParamikoPlatform
 from autosubmit.platforms.paramiko_submitter import ParamikoSubmitter
 from autosubmit.platforms.platform import Platform
@@ -2047,7 +2048,17 @@ class Autosubmit:
             if new_run:
                 job.platform.spawn_log_retrieval_process(as_conf)
 
-            job_list.update_log_status(job, as_conf, new_run)
+            cpmip_context = CPMIPThresholdNotificationManager.build_context_before_log_update(job)
+
+            log_recovered = job_list.update_log_status(job, as_conf, new_run)
+
+            if log_recovered:
+                try:
+                    CPMIPThresholdNotificationManager.notify_after_log_recovery(as_conf, job, cpmip_context)
+                    job.clean_attributes()
+                except Exception as e:
+                    Log.error(f"Error sending CPMIP notification for {job.name}: {e}")
+
 
     @staticmethod
     def refresh_log_recovery_process(platforms: list[Platform], as_conf: AutosubmitConfig) -> None:

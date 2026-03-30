@@ -27,3 +27,9 @@ class Notifier:
     @staticmethod
     def notify_experiment_status(implementation, exp_id, notify_to="",platform=""):
         implementation.notify_experiment_status(exp_id,notify_to,platform)
+
+    @staticmethod
+    def notify_cpmip_threshold_violations(implementation, exp_id, job_name="", violations=None, notify_to=""):
+        if not violations:
+            return
+        implementation.notify_cpmip_threshold_violations(exp_id, job_name, violations, notify_to)
