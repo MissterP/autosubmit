@@ -76,7 +76,7 @@ from autosubmit.job.job_utils import SubJob, SubJobManager
 from autosubmit.log.log import Log, AutosubmitError, AutosubmitCritical
 from autosubmit.notifications.mail_notifier import MailNotifier
 from autosubmit.notifications.notifier import Notifier
-from autosubmit.metrics.cpmip_metrics import CPMIPMetrics
+from autosubmit.notifications.cpmip_threshold_notification_manager import CPMIPThresholdNotificationManager
 from autosubmit.platforms.paramiko_platform import ParamikoPlatform
 from autosubmit.platforms.paramiko_submitter import ParamikoSubmitter
 from autosubmit.platforms.platform import Platform
@@ -1701,32 +1701,6 @@ class Autosubmit:
                 Autosubmit.job_notify(as_conf, expid, inner_job, inner_job.prev_status, {})
 
     @staticmethod
-    def _notify_cpmip_threshold_violations(as_conf, expid, job):
-        """Check if job CPMIP metrics violate thresholds and send notification if violations found.
-        
-        :param as_conf: AutosubmitConfig object
-        :param expid: experiment id string
-        :param job: Job object with cpmip_thresholds attribute
-        """
-
-        if job.status != Status.COMPLETED:
-            return
-        
-        if not job.cpmip_thresholds:
-            return
-        
-        violations = CPMIPMetrics.evaluate(job, job.cpmip_thresholds)
-        
-        if violations:
-            Notifier.notify_cpmip_threshold_violations(
-                MailNotifier(BasicConfig),
-                expid,
-                job.name,
-                violations,
-                as_conf.experiment_data["MAIL"]["TO"]
-            )
-
-    @staticmethod
     def job_notify(as_conf, expid, job, job_prev_status, job_changes_tracker):
         job_changes_tracker[job.name] = (job_prev_status, job.status)
         if as_conf.get_notifications() == "true":
@@ -1735,8 +1709,6 @@ class Autosubmit:
                                               Status.VALUE_TO_KEY[job_prev_status],
                                               Status.VALUE_TO_KEY[job.status],
                                               as_conf.experiment_data["MAIL"]["TO"])
-        
-            Autosubmit._notify_cpmip_threshold_violations(as_conf, expid, job)
         return job_changes_tracker
 
     @staticmethod
@@ -2076,7 +2048,17 @@ class Autosubmit:
             if new_run:
                 job.platform.spawn_log_retrieval_process(as_conf)
 
-            job_list.update_log_status(job, as_conf, new_run)
+            cpmip_context = CPMIPThresholdNotificationManager.build_context_before_log_update(job)
+
+            log_recovered = job_list.update_log_status(job, as_conf, new_run)
+
+            if log_recovered:
+                try:
+                    CPMIPThresholdNotificationManager.notify_after_log_recovery(as_conf, job, cpmip_context)
+                    job.clean_attributes()
+                except Exception as e:
+                    Log.error(f"Error sending CPMIP notification for {job.name}: {e}")
+
 
     @staticmethod
     def refresh_log_recovery_process(platforms: list[Platform], as_conf: AutosubmitConfig) -> None:

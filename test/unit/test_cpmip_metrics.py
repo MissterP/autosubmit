@@ -150,9 +150,62 @@ class TestEvaluateCPMIPMetrics:
 
 class TestFetchCPMIPMetrics:
 
+    def test_fetch_metrics_uses_total_processors_for_chsy(self, mocker):
+        job = SimpleNamespace(
+            start_time_timestamp=1000,
+            finish_time_timestamp=44200,
+            chunk_size=2,
+            chunk_size_unit="month",
+            total_processors=240,
+        )
+        mocker.patch(
+            "autosubmit.metrics.cpmip_metrics.CPMIPMetrics.SY",
+            return_value=0.5,
+        )
+        mocker.patch(
+            "autosubmit.metrics.cpmip_metrics.CPMIPMetrics.SYPD",
+            return_value=1.0,
+        )
+        chsy_mock = mocker.patch(
+            "autosubmit.metrics.cpmip_metrics.CPMIPMetrics.CHSY",
+            return_value=5760.0,
+        )
+
+        metrics = CPMIPMetrics._fetch_metrics(job)
+
+        chsy_mock.assert_called_once_with(12.0, 0.5, 240)
+        assert metrics == {"SYPD": 1.0, "CHSY": 5760.0}
+
+    def test_fetch_metrics_returns_sypd_only_when_total_processors_is_unavailable(self, mocker):
+        job = SimpleNamespace(
+            start_time_timestamp=1000,
+            finish_time_timestamp=44200,
+            chunk_size=2,
+            chunk_size_unit="month",
+            total_processors=None,
+        )
+        mocker.patch(
+            "autosubmit.metrics.cpmip_metrics.CPMIPMetrics.SY",
+            return_value=0.5,
+        )
+        mocker.patch(
+            "autosubmit.metrics.cpmip_metrics.CPMIPMetrics.SYPD",
+            return_value=1.0,
+        )
+        chsy_mock = mocker.patch(
+            "autosubmit.metrics.cpmip_metrics.CPMIPMetrics.CHSY",
+            return_value=2880.0,
+        )
+
+        metrics = CPMIPMetrics._fetch_metrics(job)
+
+        chsy_mock.assert_not_called()
+        assert metrics == {"SYPD": 1.0}
+
     def test_fetch_metrics_calls_sy_sypd_chsy_and_returns_all_metrics(self, mocker):
         job = SimpleNamespace(
-            runtime=12.0,
+            start_time_timestamp=1000,
+            finish_time_timestamp=44200,
             chunk_size=2,
             chunk_size_unit="month",
             total_processors=240,
@@ -189,9 +242,21 @@ class TestFetchCPMIPMetrics:
 
         assert metrics == {}
 
-    def test_fetch_metrics_returns_empty_when_runtime_is_non_positive(self):
+    def test_fetch_metrics_returns_empty_when_duration_is_non_positive(self):
         job = SimpleNamespace(
-            runtime=0,
+            start_time_timestamp=1000,
+            finish_time_timestamp=1000,
+            chunk_size=1,
+            chunk_size_unit="year",
+            total_processors=64,
+        )
+
+        metrics = CPMIPMetrics._fetch_metrics(job)
+
+        assert metrics == {}
+
+    def test_fetch_metrics_returns_empty_when_timestamps_are_missing(self):
+        job = SimpleNamespace(
             chunk_size=1,
             chunk_size_unit="year",
             total_processors=64,
@@ -203,7 +268,8 @@ class TestFetchCPMIPMetrics:
 
     def test_fetch_metrics_returns_empty_when_chunk_unit_is_non_positive(self):
         job = SimpleNamespace(
-            runtime=12,
+            start_time_timestamp=1000,
+            finish_time_timestamp=44200,
             chunk_size=-1,
             chunk_size_unit="year",
             total_processors=64,
@@ -213,21 +279,11 @@ class TestFetchCPMIPMetrics:
 
         assert metrics == {}
 
-    def test_fetch_metrics_returns_empty_when_chunk_metadata_uses_legacy_aliases_only(self):
-        job = SimpleNamespace(
-            runtime=24.0,
-            chunksize=365,
-            chunksizeunit="day",
-            total_processors=120,
-        )
-
-        metrics = CPMIPMetrics._fetch_metrics(job)
-
-        assert metrics == {}
 
     def test_fetch_metrics_returns_sypd_when_total_processors_is_missing(self):
         job = SimpleNamespace(
-            runtime=24.0,
+            start_time_timestamp=1000,
+            finish_time_timestamp=87400,
             chunk_size=365,
             chunk_size_unit="day",
         )
@@ -238,7 +294,8 @@ class TestFetchCPMIPMetrics:
 
     def test_fetch_metrics_returns_sypd_when_total_processors_is_invalid(self):
         job = SimpleNamespace(
-            runtime=24.0,
+            start_time_timestamp=1000,
+            finish_time_timestamp=87400,
             chunk_size=365,
             chunk_size_unit="day",
             total_processors=0,

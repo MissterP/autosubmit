@@ -15,6 +15,8 @@
 # You should have received a copy of the GNU General Public License 
 # along with Autosubmit.  If not, see <http://www.gnu.org/licenses/>. 
 
+from email import message_from_string
+import re
 from typing import Generator, Tuple
 from unittest.mock import Mock
 
@@ -24,7 +26,10 @@ from testcontainers.core.container import DockerContainer
 from testcontainers.core.waiting_utils import wait_for_logs
 
 from autosubmit.job.job_common import Status
-from autosubmit.notifications.mail_notifier import MailNotifier
+from autosubmit.notifications.mail_notifier import (
+    MailNotifier,
+    _generate_message_cpmip_threshold_violations,
+)
 from autosubmit.platforms.platform import Platform
 from test.integration.test_utils.networking import get_free_port
 
@@ -87,6 +92,70 @@ def _check_metadata(
             assert recipient in email["Raw"]["To"]
 
 
+def _extract_plain_text_body(email_item: dict) -> str:
+    """Extract the text/plain body from a MailHog message item."""
+    body = email_item["Content"]["Body"]
+
+    boundary_payload = _extract_text_from_boundary_payload(body)
+    if boundary_payload is not None:
+        return boundary_payload
+
+    if "Content-Type: multipart" not in body:
+        return body
+
+    multipart_payload = _extract_text_from_multipart_message(body)
+    if multipart_payload is not None:
+        return multipart_payload
+
+    return body
+
+
+def _extract_text_from_boundary_payload(body: str) -> str | None:
+    """Extract text payload from boundary-delimited raw MIME body."""
+    if not (body.lstrip().startswith("--") and "Content-Type: text/plain" in body):
+        return None
+
+    text_plain_index = body.find("Content-Type: text/plain")
+    payload_start = body.find("\n\n", text_plain_index)
+    if payload_start == -1:
+        return None
+
+    payload_start += 2
+    boundary_match = re.search(r"\n--[=\-A-Za-z0-9_]+", body[payload_start:])
+    if boundary_match:
+        payload_end = payload_start + boundary_match.start()
+        return body[payload_start:payload_end]
+
+    return body[payload_start:]
+
+
+def _extract_text_from_multipart_message(body: str) -> str | None:
+    """Extract text/plain content from a parsed multipart MIME message."""
+    parsed = message_from_string(body)
+    if not parsed.is_multipart():
+        return None
+
+    for part in parsed.walk():
+        if part.get_content_type() == "text/plain":
+            payload = part.get_payload(decode=True)
+            if payload is None:
+                return part.get_payload()
+            charset = part.get_content_charset() or "utf-8"
+            return payload.decode(charset)
+
+    return None
+
+
+def _normalize_mail_text(text: str) -> str:
+    """Normalize e-mail text for stable equality assertions."""
+    return text.replace("\r\n", "\n").strip()
+
+
+def _expected_cpmip_mail_body(exp_id: str, job_name: str, violations: dict) -> str:
+    """Return expected body for CPMIP threshold violation notification."""
+    return _generate_message_cpmip_threshold_violations(exp_id, job_name, violations)
+
+
 @pytest.mark.docker
 def test_notify_status_change(mail_notifier, fake_smtp_server):
     _, api_base = fake_smtp_server
@@ -107,7 +176,6 @@ def test_notify_status_change(mail_notifier, fake_smtp_server):
     emails = resp.json()["items"]
     _check_metadata(emails, "status has changed to FAILED",
                    expid, 'notifier@localhost', to_email)
-
 
 @pytest.mark.docker
 def test_experiment_status(mail_notifier, fake_smtp_server, mock_platform):
@@ -183,13 +251,8 @@ def test_notify_cpmip_threshold_violations(mail_notifier, fake_smtp_server):
         'notifier@localhost',
         to_email)
 
-    body = emails[0]["Content"]["Body"]
-    assert "Autosubmit notification: CPMIP threshold violations" in body
-    assert "Metric: LATENCY" in body
-    assert "Metric: SYPD" in body
-    assert "----------------------------------------" in body
-    assert "Comparison: must be <= effective bound (less_than)" in body
-    assert "Comparison: must be >= effective bound (greater_than)" in body
+    expected_body = _expected_cpmip_mail_body(expid, job_name, violations)
+    assert _normalize_mail_text(_extract_plain_text_body(emails[0])) == _normalize_mail_text(expected_body)
 
 
 @pytest.mark.parametrize(
